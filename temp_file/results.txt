@@ -1,0 +1,20 @@
+Dataset: ETTh1 | PatchTransformer
+Test MSE: 0.327155 | Test MAE: 0.381071 | Test R2: 0.659872
+Configuration: seq_len=96, pred_len=24, patch_size=16, d_model=32
+--------------------------------------------------
+Dataset: ETTh1 | PatchTransformer
+Test MSE: 0.327155 | Test MAE: 0.381071 | Test R2: 0.659872
+Configuration: seq_len=96, pred_len=24, patch_size=16, d_model=32
+--------------------------------------------------
+Dataset: exchange | PatchTransformer
+Test MSE: 0.142170 | Test MAE: 0.280607 | Test R2: 0.723417
+Configuration: seq_len=96, pred_len=96, patch_size=16, d_model=32
+--------------------------------------------------
+Dataset: ETTh1 | PatchTransformer
+Test MSE: 0.327155 | Test MAE: 0.381071 | Test R2: 0.659872
+Configuration: seq_len=96, pred_len=24, patch_size=16, d_model=32
+--------------------------------------------------
+Dataset: ETTh1 | PatchTransformer
+Test MSE: 0.569251 | Test MAE: 0.485751 | Test R2: 0.408809
+Configuration: seq_len=6, pred_len=6, patch_size=2, d_model=32
+--------------------------------------------------
