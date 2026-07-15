@@ -27,7 +27,7 @@ GBS_CFG = {
     # === c_ratio 模式开关 ===
     # "fixed"     — c_ratio 字段的值作为固定超参数（默认，保持原行为）
     # "learnable" — c_ratio 作为初始值，模型自动学习最优挤压强度
-    "c_ratio_mode": "fixed",          # "fixed" | "learnable"
+    "c_ratio_mode": "fixed",          # "fixed" | "learnable" 可学习的c_ratio会趋向于1，TODO: 未来可考虑加正则化约束或clamp
 
     # GBS 挤压强度缩放因子：tanh(r_i) = c_ratio / max_sqrt_d * sqrt(d_i)
     # 取值范围 (0, 1)；越小越接近线性注意力，越大非线性越强
@@ -92,31 +92,37 @@ def encode_graph_to_unitary_torch(
     # 修正方案：先强制对称化（消除浮点误差引入的微小非对称），再加 ε·I 打破退化
     W = (W + W.transpose(-2, -1)) * 0.5                          # 强制对称
 
-    # ε·I 正则化：用 max|A| 缩放，确保 A=0 时无正则化（保持物理正确性：无图→无挤压）
-    # A≠0 时正则化与 A 的量级匹配，有效打破近退化而不影响主要特征值
-    _scale = A.abs().amax(dim=(-2, -1), keepdim=True).clamp(min=0.0)  # (..., 1, 1)
+    # ε·I 正则化：用 max|W| 缩放，确保 A=0 时无正则化
+    # W 的特征值在 A=0 时本身就为 0，用 W 自身的量级进行正则化能保证比例一致性
+    _scale_W = W.abs().amax(dim=(-2, -1), keepdim=True).clamp(min=0.0)  # (..., 1, 1)
     N = W.shape[-1]
-    W = W + GBS_CFG["eig_regularize"] * _scale * torch.eye(
+    W = W + GBS_CFG["eig_regularize"] * _scale_W * torch.eye(
         N, device=W.device, dtype=W.dtype
     )
     
-    # 强力打破特征值严格退化：cuSOLVER 对完全相等的特征值（如 W 全 0）极其敏感
-    # 加入一个极小的非均匀对角线噪声矩阵，使得所有特征值在底层都不完全相等
-    diag_noise = torch.arange(1, N + 1, device=W.device, dtype=W.dtype) * 1e-6
-    W = W + torch.diag(diag_noise)
+    # 强力打破特征值严格退化：用 W 的量级缩放随机对角噪声，避免 A=0 时出现非零挤压
+    diag_noise = torch.rand(W.shape[:-1], device=W.device, dtype=W.dtype) * _scale_W.squeeze(-1) * 1e-6
+    # 使用 torch.diag_embed() 支持 Batch 维度的对角矩阵嵌入：(..., N, N)
+    W = W + torch.diag_embed(diag_noise)
 
-    try:
-        d, U = torch.linalg.eigh(W)          # d: (..., N), U: (..., N, N)
-    except torch._C._LinAlgError:
-        # CUDA 上的 cuSOLVER 若依然崩溃，则 fallback 到 float64 双精度求解
+    def _eigh_fallback(W_tensor: torch.Tensor, depth: int) -> tuple:
+        """递归 fallback：float32 CUDA → float64 CUDA → float64 CPU → CPU+1e-3I"""
         try:
-            d, U = torch.linalg.eigh(W.to(torch.float64))
-            d, U = d.to(W.dtype), U.to(W.dtype)
+            return torch.linalg.eigh(W_tensor)
         except Exception:
-            # 终极 Fallback：到 CPU 上使用更稳定的 LAPACK 求解
-            W_cpu = W.cpu().to(torch.float64)
-            d_cpu, U_cpu = torch.linalg.eigh(W_cpu)
-            d, U = d_cpu.to(W.device, W.dtype), U_cpu.to(W.device, W.dtype)
+            if depth >= 3:
+                # 最终手段：加 1e-3·I 强制正定
+                N = W_tensor.shape[-1]
+                I = torch.eye(N, device=W_tensor.device, dtype=W_tensor.dtype)
+                return torch.linalg.eigh(W_tensor + 1e-3 * I)
+            if W_tensor.dtype != torch.float64:
+                return _eigh_fallback(W_tensor.to(torch.float64), depth + 1)
+            if W_tensor.device.type != 'cpu':
+                return _eigh_fallback(W_tensor.cpu(), depth + 1)
+            return _eigh_fallback(W_tensor, depth + 1)
+
+    d, U = _eigh_fallback(W, depth=0)
+    d, U = d.to(device=W.device, dtype=W.dtype), U.to(device=W.device, dtype=W.dtype)
             
     d = d.clamp(min=GBS_CFG["eig_min_clamp"])
 
@@ -136,6 +142,11 @@ def encode_graph_to_unitary_torch(
     )
     c = c_ratio / max_sqrt_d                          # (..., 1)
     tanh_r = (c * sqrt_d).clamp(0.0, GBS_CFG["tanh_r_max"])
+    
+    # 物理门控：当 A=0 (即 _scale_W 极小) 时，将挤压系数强行归零，避免数值精度和 clamp 导致的非零挤压
+    gate = torch.where(_scale_W.squeeze(-1).squeeze(-1) > 1e-11, 1.0, 0.0).unsqueeze(-1)
+    tanh_r = tanh_r * gate
+    
     r = tanh_r.arctanh()
 
     return T, r

@@ -167,10 +167,16 @@ class GBSPatchTransformer(nn.Module):
 # ============================================================
 
 def evaluate(model, dataloader, criterion, device):
-    """计算验证/测试集上的 Loss、MSE、MAE、R²（全部基于归一化后的数值）。"""
+    """
+    计算验证/测试集上的 Loss、MSE、MAE、R²、MAPE，以及 Naive Baseline 对比。
+
+    Naive Baseline = 把输入序列最后一个值重复 pred_len 次（持久性模型）。
+    若模型 MSE/MAE 不低于 Naive，说明模型没有学到任何时序动态。
+    MASE < 1 表示模型比"复制最后一步"好。
+    """
     model.eval()
     total_loss = 0.0
-    preds, trues = [], []
+    preds, trues, last_vals = [], [], []
 
     with torch.no_grad():
         for x, y in dataloader:
@@ -179,16 +185,31 @@ def evaluate(model, dataloader, criterion, device):
             total_loss += criterion(out, y).item() * x.size(0)
             preds.append(out.cpu().numpy())
             trues.append(y.cpu().numpy())
+            # 保存输入序列最后一个值（用于 Naive Baseline）
+            last_vals.append(x[:, -1:, :].cpu().numpy())  # (B, 1, C)
 
-    preds = np.concatenate(preds)
+    preds = np.concatenate(preds)            # (N, pred_len, C)
     trues = np.concatenate(trues)
+    last_vals = np.concatenate(last_vals)    # (N, 1, C)
 
+    # ── 模型指标 ──
     mse = np.mean((preds - trues) ** 2)
     mae = np.mean(np.abs(preds - trues))
     r2  = 1.0 - np.sum((trues - preds) ** 2) / (
         np.sum((trues - trues.mean(axis=0)) ** 2) + 1e-9
     )
-    return total_loss / len(dataloader.dataset), mse, mae, r2
+    # MAPE（百分比误差，加 epsilon 防除零）
+    mape = np.mean(np.abs((trues - preds) / (np.abs(trues) + 1e-9))) * 100
+
+    # ── Naive Baseline（持久性模型）──
+    naive_preds = np.repeat(last_vals, trues.shape[1], axis=1)  # (N, pred_len, C)
+    naive_mse   = np.mean((naive_preds - trues) ** 2)
+    naive_mae   = np.mean(np.abs(naive_preds - trues))
+
+    # ── MASE：模型 MAE 相对 Naive MAE 的比值 ──
+    mase = mae / (naive_mae + 1e-9)
+
+    return total_loss / len(dataloader.dataset), mse, mae, r2, mape, naive_mse, naive_mae, mase
 
 
 # ============================================================
@@ -271,11 +292,18 @@ def train(args):
             train_loss += loss.item() * x.size(0)
 
         train_loss /= len(train_loader.dataset)  # type: ignore[arg-type]
-        val_loss, _, _, val_r2 = evaluate(model, val_loader, criterion, device)
+        val_loss, _, _, val_r2, _, _, _, _ = evaluate(model, val_loader, criterion, device)
         elapsed = time.time() - t0
 
         print(f"Ep {epoch+1:02d}/{args.epochs}  {elapsed:.1f}s  "
-              f"{train_loss:.4f}    {val_loss:.4f}    {val_r2:.4f}")
+              f"{train_loss:.4f}    {val_loss:.4f}    {val_r2:.4f}", end="")
+
+        # learnable 模式：打印当前 c_ratio 变化
+        if model.c_ratio_mode == "learnable":
+            cr_val = model.attn.c_ratio
+            if isinstance(cr_val, torch.Tensor):
+                print(f"   c_ratio={cr_val.item():.4f}", end="")
+        print()
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -289,13 +317,18 @@ def train(args):
 
     # ---- 测试评估 ----
     model.load_state_dict(torch.load(save_path, weights_only=True))
-    _, test_mse, test_mae, test_r2 = evaluate(model, test_loader, criterion, device)
+    (_, test_mse, test_mae, test_r2,
+     test_mape, naive_mse, naive_mae, test_mase) = evaluate(
+        model, test_loader, criterion, device
+    )
 
     print("\n" + "=" * 55)
     print(f"最终测试结果 — {args.dataset}（GBSPatchTransformer）")
     print("=" * 55)
-    print(f"测试 MSE  : {test_mse:.6f}")
-    print(f"测试 MAE  : {test_mae:.6f}")
+    print(f"测试 MSE  : {test_mse:.6f}   Naive MSE: {naive_mse:.6f}")
+    print(f"测试 MAE  : {test_mae:.6f}   Naive MAE: {naive_mae:.6f}")
+    print(f"测试 MAPE : {test_mape:.2f}%")
+    print(f"测试 MASE : {test_mase:.4f}  {'✅ < 1 好于 Naive' if test_mase < 1 else '⚠ ≥ 1 差于 Naive'}")
     print(f"测试 R²   : {test_r2:.6f}")
     cr_mode = getattr(args, 'c_ratio_mode', None) or GBS_CFG.get("c_ratio_mode", "fixed")
     if cr_mode == 'learnable':
@@ -309,6 +342,8 @@ def train(args):
         with open("results.txt", "a", encoding="utf-8") as f:
             f.write(f"Dataset: {args.dataset} | GBSPatchTransformer\n")
             f.write(f"Test MSE: {test_mse:.6f} | Test MAE: {test_mae:.6f} | Test R2: {test_r2:.6f}\n")
+            f.write(f"Naive MSE: {naive_mse:.6f} | Naive MAE: {naive_mae:.6f}\n")
+            f.write(f"MAPE: {test_mape:.2f}% | MASE: {test_mase:.4f}\n")
             f.write(
                 f"Config: seq_len={args.seq_len}, pred_len={args.pred_len}, "
                 f"patch_size={args.patch_size}, d_model={args.d_model}, c_ratio={args.c_ratio}\n"
