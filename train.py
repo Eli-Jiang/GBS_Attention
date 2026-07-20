@@ -1,10 +1,13 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 from config import Config
 # 💡 注意看，全面加上了 src.
 from src.model.transformer import TimeSeriesTransformer
 from src.data.dataset import get_dataloader  # 你的 dataset 好像在 src/data/ 目录下
+from sklearn.preprocessing import MinMaxScaler
 
 def main():
     # 1. 加载配置
@@ -15,7 +18,11 @@ def main():
     # 💡 提示：这里假设你使用的是 Numpy 数组 [总时间步, 特征数]。
     # 如果你的数据在 csv 里，可以用 np.loadtxt() 或 pandas 读进来，确保 shape 是 [N, c_in]
     # 我们这里先用随机数模拟真实数据，换成你的数据即可：
-    raw_data = np.random.randn(12, cfg.c_in) 
+    df = pd.read_csv("data/numbers.csv")  # 假设你的数据在 numbers.csv 文件中
+    raw_data = df.values  # 转换为 NumPy 数组
+
+    scaler = MinMaxScaler()
+    raw_data = scaler.fit_transform(raw_data)
     
     # 3. 实例化 DataLoader
     train_loader = get_dataloader(
@@ -47,6 +54,8 @@ def main():
     print("--- 🦾 炼丹炉正式点火 ---")
     model.train() # 将模型设置为训练模式（启用 Dropout 等）
     
+    loss_history = []
+
     for epoch in range(cfg.epochs):
         epoch_loss = 0.0
         
@@ -71,6 +80,7 @@ def main():
             
         # 打印当前 Epoch 的平均损失
         avg_loss = epoch_loss / len(train_loader)
+        loss_history.append(avg_loss)
         print(f"Epoch [{epoch+1}/{cfg.epochs}] | Train MSE Loss: {avg_loss:.6f}")
 
     print("--- 🎉 训练完成！ ---")
@@ -78,6 +88,16 @@ def main():
     # 7. 保存模型权重
     torch.save(model.state_dict(), "best_quantum_transformer.pth")
     print("模型权重已保存至: best_quantum_transformer.pth")
+
+    # 8. 绘制损失曲线
+    plt.figure(figsize=(10, 5))
+    plt.plot(loss_history)
+    plt.title("Training Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("MSE Loss")
+    plt.show()
+
+    plt.savefig('loss_curve.png')
 
 if __name__ == "__main__":
     main()
