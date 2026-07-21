@@ -65,7 +65,7 @@ def gbs_mean(df):
 
     # 2. 计算每个状态的概率 (对应你说的 1/1024, 3/1024)
     # 这里假设总数是 1024，如果是动态总数可以换成 counts.sum()
-    total_count = 1024.0
+    total_count = 1024.0*4
     probs = counts / total_count
 
     # 3. 利用矩阵乘法一键生成图的邻接矩阵
@@ -94,7 +94,7 @@ def gbs_sample(T, r):
     gbs = dq.photonic.GaussianBosonSampling(nmode=6, squeezing=r, unitary=T)
     gbs()
     gbs.detector = 'pnrd'
-    result = gbs.measure(shots=1024*2, mcmc=True)
+    result = gbs.measure(shots=1024*4, mcmc=True)
     formatted_data = {str(k).strip('|>'): v for k, v in result.items()}
 
     df = pd.DataFrame(list(formatted_data.items()), columns=['State', 'Count'])

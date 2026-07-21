@@ -18,5 +18,5 @@ class Config:
     # 训练超参数
     batch_size = 1
     lr = 3e-4         # 经典的 AdamW 初始学习率
-    epochs = 5        # 先跑 5 个 Epoch 试试水
+    epochs = 10        # 先跑 5 个 Epoch 试试水
     device = "cuda" if torch.cuda.is_available() else "cpu"

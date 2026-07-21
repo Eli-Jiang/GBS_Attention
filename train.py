@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from config import Config
-# 💡 注意看，全面加上了 src.
+
 from src.model.transformer import TimeSeriesTransformer
 from src.data.dataset import get_dataloader  # 你的 dataset 好像在 src/data/ 目录下
 from sklearn.preprocessing import MinMaxScaler
@@ -21,12 +21,11 @@ def main():
     df = pd.read_csv("data/numbers.csv")  # 假设你的数据在 numbers.csv 文件中
     raw_data = df.values  # 转换为 NumPy 数组
 
-    scaler = MinMaxScaler()
-    raw_data = scaler.fit_transform(raw_data)
+    diff_data = np.diff(raw_data, axis=0)
     
     # 3. 实例化 DataLoader
     train_loader = get_dataloader(
-        data=raw_data, 
+        data=diff_data, 
         seq_len=cfg.seq_len, 
         pred_len=cfg.pred_len, 
         batch_size=cfg.batch_size, 
