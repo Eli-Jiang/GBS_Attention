@@ -16,11 +16,11 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         return x + self.pe[:, :x.size(1)]
 
-# 💡 时序专用的 Token Embedding
+#  时序专用的 Token Embedding
 class TimeSeriesEmbedding(nn.Module):
     def __init__(self, c_in, d_model, max_len=5000, dropout=0.1):
         super().__init__()
-        # 💡 改用 nn.Linear，它只作用于最后一个维度（特征维），对序列长度完全不敏感
+        #  改用 nn.Linear，它只作用于最后一个维度（特征维），对序列长度完全不敏感
         self.value_embedding = nn.Linear(c_in, d_model)
         self.pos_embedding = PositionalEncoding(d_model, max_len)
         self.dropout = nn.Dropout(dropout)

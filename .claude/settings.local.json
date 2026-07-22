@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git remote:*)"
+      "Bash(git remote:*)",
+      "WebSearch",
+      "Bash(python:*)",
+      "Bash(fc-list ::*)",
+      "Bash(kill 34306:*)",
+      "Bash(pkill:*)"
     ]
   }
 }
