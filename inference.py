@@ -120,44 +120,36 @@ def main():
 
     # 当前配置的模型
     use_gbs = cfg.use_gbs
-    # 标签: True=gbs(dq), False=gbs(theory)
-    if use_gbs is True:
-        current_mode = "gbs(dq)"
-        model_label = "gbs(dq)"
-    else:
-        current_mode = "gbs(theory)"
-        model_label = "gbs(theory)"
-    current_path = "best_quantum_transformer.pth"
 
     if cfg.compare_standard:
-        # 对比模式
-        print(f"\n=== 运行 {model_label} 模型 ===")
-        test_x_raw, true_y_orig, pred_y_abs, last_hist, cols = run_inference(cfg, current_path, use_gbs)
+        # 对比模式：运行两个模型
+        print(f"\n=== 运行 GBS 模型 ===")
+        test_x_raw, true_y_orig, pred_y_abs, last_hist, cols = run_inference(cfg, "best_quantum_transformer.pth", True)
 
-        print(f"\n=== 运行 standard 模型 ===")
-        test_x_raw2, true_y_orig2, pred_y_std, _, _ = run_inference(cfg, "best_standard_transformer.pth", "standard")
+        print(f"\n=== 运行 Standard 模型 ===")
+        test_x_raw2, true_y_orig2, pred_y_std, _, _ = run_inference(cfg, "best_standard_transformer.pth", False)
 
         # 计算指标
         print("\n" + "="*60)
         print("评估指标汇总 (所有特征平均)")
         print("="*60)
 
-        avg_theory = {'MSE': 0, 'MAE': 0, 'RMSE': 0, 'MAPE': 0}
+        avg_gbs = {'MSE': 0, 'MAE': 0, 'RMSE': 0, 'MAPE': 0}
         avg_standard = {'MSE': 0, 'MAE': 0, 'RMSE': 0, 'MAPE': 0}
 
         for i, col in enumerate(cols):
             m1 = calculate_metrics(true_y_orig[:, i], pred_y_abs[:, i])
             m2 = calculate_metrics(true_y_orig2[:, i], pred_y_std[:, i])
-            for k in avg_theory:
-                avg_theory[k] += m1[k]
+            for k in avg_gbs:
+                avg_gbs[k] += m1[k]
                 avg_standard[k] += m2[k]
-            print(f"{col}: {current_mode} MSE={m1['MSE']:.6f}, standard MSE={m2['MSE']:.6f}")
+            print(f"{col}: GBS MSE={m1['MSE']:.6f}, Standard MSE={m2['MSE']:.6f}")
 
-        for k in avg_theory:
-            avg_theory[k] /= len(cols)
+        for k in avg_gbs:
+            avg_gbs[k] /= len(cols)
             avg_standard[k] /= len(cols)
 
-        print(f"\n{model_label} 平均: MSE={avg_theory['MSE']:.6f}, MAE={avg_theory['MAE']:.6f}")
+        print(f"\nGBS 平均: MSE={avg_gbs['MSE']:.6f}, MAE={avg_gbs['MAE']:.6f}")
         print(f"STANDARD 平均: MSE={avg_standard['MSE']:.6f}, MAE={avg_standard['MAE']:.6f}")
 
         # 保存详细结果到CSV
@@ -167,14 +159,14 @@ def main():
             m2 = calculate_metrics(true_y_orig2[:, i], pred_y_std[:, i])
             rows.append({
                 'feature': col,
-                f'{current_mode}_MSE': m1['MSE'],
-                f'{current_mode}_MAE': m1['MAE'],
-                f'{current_mode}_RMSE': m1['RMSE'],
-                f'{current_mode}_MAPE': m1['MAPE'],
-                'standard_MSE': m2['MSE'],
-                'standard_MAE': m2['MAE'],
-                'standard_RMSE': m2['RMSE'],
-                'standard_MAPE': m2['MAPE']
+                'GBS_MSE': m1['MSE'],
+                'GBS_MAE': m1['MAE'],
+                'GBS_RMSE': m1['RMSE'],
+                'GBS_MAPE': m1['MAPE'],
+                'Standard_MSE': m2['MSE'],
+                'Standard_MAE': m2['MAE'],
+                'Standard_RMSE': m2['RMSE'],
+                'Standard_MAPE': m2['MAPE']
             })
         df_results = pd.DataFrame(rows)
         df_results.to_csv(f"{cfg.output_dir}/metrics_comparison.csv", index=False)
@@ -202,13 +194,13 @@ def main():
             aligned_true = np.insert(true_y_orig[:, i], 0, last_hist[i])
             ax.plot(future_range, aligned_true, label='True', color='green', marker='o', markersize=3)
             aligned_pred_cur = np.insert(pred_y_abs[:, i], 0, last_hist[i])
-            ax.plot(future_range, aligned_pred_cur, label=current_mode, color='red', linestyle='--', marker='x', markersize=3)
+            ax.plot(future_range, aligned_pred_cur, label='GBS', color='red', linestyle='--', marker='x', markersize=3)
             aligned_pred_std = np.insert(pred_y_std[:, i], 0, last_hist[i])
-            ax.plot(future_range, aligned_pred_std, label='standard', color='blue', linestyle=':', marker='+', markersize=3)
+            ax.plot(future_range, aligned_pred_std, label='Standard', color='blue', linestyle=':', marker='+', markersize=3)
 
             m1 = calculate_metrics(true_y_orig[:, i], pred_y_abs[:, i])
             m2 = calculate_metrics(true_y_orig2[:, i], pred_y_std[:, i])
-            ax.set_title(f'{col} - {current_mode} MSE:{m1["MSE"]:.4f} vs standard MSE:{m2["MSE"]:.4f}')
+            ax.set_title(f'{col} - GBS MSE:{m1["MSE"]:.4f} vs Standard MSE:{m2["MSE"]:.4f}')
             ax.legend(fontsize=8)
             ax.grid(True, alpha=0.3)
             ax.axvline(x=history_len-1, color='gray', linestyle=':', alpha=0.7)
@@ -219,9 +211,11 @@ def main():
         print(f"对比图已保存至: {cfg.output_dir}/output.png")
 
     else:
-        # 单模型模式
-        print(f"\n=== 运行 {model_label} 模型 ===")
-        test_x_raw, true_y_orig, pred_y_abs, last_hist, cols = run_inference(cfg, current_path, use_gbs)
+        # 单模型模式：根据use_gbs决定跑哪个模型
+        model_name = "GBS" if cfg.use_gbs else "Standard"
+        model_path = "best_quantum_transformer.pth" if cfg.use_gbs else "best_standard_transformer.pth"
+        print(f"\n=== 运行 {model_name} 模型 ===")
+        test_x_raw, true_y_orig, pred_y_abs, last_hist, cols = run_inference(cfg, model_path, cfg.use_gbs)
 
         # 计算并打印指标
         print("\n评估指标:")
@@ -232,8 +226,8 @@ def main():
             rows.append({'feature': col, **m})
 
         df_results = pd.DataFrame(rows)
-        df_results.to_csv(f"{cfg.output_dir}/metrics_{current_mode}.csv", index=False)
-        print(f"\n指标已保存至: {cfg.output_dir}/metrics_{current_mode}.csv")
+        df_results.to_csv(f"{cfg.output_dir}/metrics_{model_name}.csv", index=False)
+        print(f"\n指标已保存至: {cfg.output_dir}/metrics_{model_name}.csv")
 
         # 绘图
         save_path = f"{cfg.output_dir}/output.png"

@@ -10,8 +10,8 @@ class Config:
 
     # 数据文件配置
     data_path = "data/weather.csv"  # 数据文件路径
-    train_start = 0         # 训练数据起始索引
-    train_end = 3000       # 训练数据结束索引（用3000条足够训练）
+    train_start = 5000         # 训练数据起始索引
+    train_end = 6000       # 训练数据结束索引
     val_start = 3000      # 验证数据起始索引
     val_end = 3500         # 验证数据结束索引
     test_start = 3500      # 测试/推理数据起始索引
@@ -37,7 +37,7 @@ class Config:
     # 训练超参数
     batch_size = 32
     lr = 1e-4        # 经典的 AdamW 初始学习率
-    epochs = 30         # 训练轮数
+    epochs = 50         # 训练轮数
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # 兼容性别名

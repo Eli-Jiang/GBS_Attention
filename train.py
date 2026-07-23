@@ -71,7 +71,7 @@ def train_model(cfg, train_data, val_data, use_gbs, model_path):
         use_gbs=use_gbs
     ).to(cfg.device)
 
-    gbs_label = "gbs(dq)" if use_gbs is True else "gbs(theory)" if use_gbs is False else "standard"
+    gbs_label = "GBS" if use_gbs else "Standard"
     print(f"\n=== 训练 {gbs_label} 模型 ===")
 
     # DataLoader
@@ -151,17 +151,21 @@ def main():
     os.makedirs(cfg.output_dir, exist_ok=True)
 
     # 根据配置决定训练哪些模型
-    current_use_gbs = cfg.use_gbs
-    current_path = cfg.model_path
+    # use_gbs=True: GBS模型, use_gbs=False: Standard模型
+    # compare_standard=True: 两个都训练对比, False: 只跑当前配置的
 
-    # 训练当前配置的模型
-    if current_use_gbs is not "standard":
-        train_model(cfg, train_data, val_data, current_use_gbs, current_path)
-
-    # 如果需要对比standard
     if cfg.compare_standard:
-        # 训练standard模型
+        # 对比模式：训练两个模型
         print("\n" + "="*50)
+        # 先训练GBS模型
+        train_model(cfg, train_data, val_data, True, "best_quantum_transformer.pth")
+        # 再训练Standard模型
+        print("\n" + "="*50)
+        train_model(cfg, train_data, val_data, False, "best_standard_transformer.pth")
+    else:
+        # 非对比模式：只跑当前配置的模型
+        current_use_gbs = cfg.use_gbs
+        train_model(cfg, train_data, val_data, current_use_gbs, cfg.model_path)
         train_model(cfg, train_data, val_data, "standard", "best_standard_transformer.pth")
 
     print("\n---  全部训练完成！ ---")
