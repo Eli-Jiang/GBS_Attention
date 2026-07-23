@@ -23,3 +23,8 @@ git clone <仓库URL> 2607-notes
 cd 2607-notes
 git checkout lab-notes
 ```
+
+# 0723
+1. 一个是看看能不能用真机去跑
+2. 其次是为了能用GBS做出的妥协（比如说 $Q \cdot K^{T}$ 变成酉矩阵），解释性问问觉得不够强，可能会导致loss很大
+3. 概率幅尝试一下平方，还有
